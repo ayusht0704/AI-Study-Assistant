@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AI Study Assistant</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0c0e14;
+    --surface: #13161f;
+    --surface2: #1a1e2b;
+    --border: #252a3a;
+    --accent: #6ef0b0;
+    --accent2: #5b8fff;
+    --accent3: #ff7eb3;
+    --text: #e8eaf2;
+    --muted: #6b7191;
+    --radius: 14px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.6;
+  }
+
+  /* Ambient background blobs */
+  .blob {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.07;
+    pointer-events: none;
+    z-index: 0;
+    animation: drift 12s ease-in-out infinite alternate;
+  }
+  .blob1 { width: 500px; height: 500px; background: var(--accent); top: -150px; right: -100px; }
+  .blob2 { width: 400px; height: 400px; background: var(--accent2); bottom: -100px; left: -80px; animation-delay: -4s; }
+  .blob3 { width: 300px; height: 300px; background: var(--accent3); top: 40%; left: 40%; animation-delay: -8s; }
+
+  @keyframes drift {
+    from { transform: translate(0, 0) scale(1); }
+    to   { transform: translate(30px, 20px) scale(1.05); }
+  }
+
+  /* Layout */
+  .app {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+    animation: fadeUp 0.5s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Header */
+  .header {
+    margin-bottom: 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .header-tag {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    text-transform: uppercase;
+    font-weight: 400;
+  }
+  .header h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .header h1 span {
+    color: var(--accent);
+  }
+  .header p {
+    color: var(--muted);
+    font-size: 13px;
+    max-width: 480px;
+    line-height: 1.6;
+  }
+
+  /* API Key banner */
+  .api-banner {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent2);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .api-banner label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    white-space: nowrap;
+  }
+  .api-banner input {
+    flex: 1;
+    min-width: 200px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .api-banner input:focus { border-color: var(--accent2); }
+  .api-status {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: #1f2637;
+    white-space: nowrap;
+  }
+  .api-status.ok  { color: var(--accent); }
+  .api-status.bad { color: var(--accent3); }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 9px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .tab-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0c0e14;
+    font-weight: 600;
+  }
+
+  /* Panel */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  .panel-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text);
+  }
+  .panel-title .icon {
+    font-size: 20px;
+  }
+
+  /* Form elements */
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  input[type="text"],
+  textarea,
+  select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    resize: vertical;
+  }
+  input[type="text"]:focus,
+  textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(110,240,176,0.08); }
+  textarea { min-height: 120px; }
+
+  /* Radio group */
+  .radio-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .radio-group label {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--muted);
+    transition: all 0.2s;
+    text-transform: none;
+    letter-spacing: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+  }
+  .radio-group input[type="radio"] { display: none; }
+  .radio-group input[type="radio"]:checked + span {
+    /* handled via JS class */
+  }
+  .radio-group label.selected {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(110,240,176,0.06);
+  }
+  .radio-group label.selected-blue {
+    border-color: var(--accent2);
+    color: var(--accent2);
+    background: rgba(91,143,255,0.06);
+  }
+
+  /* Slider */
+  .slider-wrap { display: flex; align-items: center; gap: 14px; }
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  .slider-val {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 28px;
+    text-align: center;
+  }
+
+  /* Button */
+  .btn-primary {
+    padding: 13px 28px;
+    background: var(--accent);
+    color: #0c0e14;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(110,240,176,0.25); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-primary.loading::after {
+    content: '';
+    width: 14px; height: 14px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: #0c0e14;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Output box */
+  .output-box {
+    margin-top: 24px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text);
+    min-height: 160px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+  .output-box.streaming { border-color: var(--accent); }
+  .output-box .placeholder {
+    color: var(--muted);
+    font-style: italic;
+    font-size: 12px;
+  }
+
+  /* Cursor blink */
+  .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: var(--accent);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: blink 0.8s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Output header row */
+  .output-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+  .output-label {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .copy-btn {
+    padding: 4px 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Error */
+  .error-text { color: var(--accent3); }
+
+  /* Divider */
+  .divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 64px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  .footer a { color: var(--accent2); text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .panel { padding: 20px 16px; }
+    .app { padding: 28px 14px 60px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="blob blob1"></div>
+<div class="blob blob2"></div>
+<div class="blob blob3"></div>
+
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-tag">⚡ Powered by Gemini 1.5 Flash</div>
+    <h1>AI Study<br><span>Assistant</span></h1>
+    <p>Explain topics, generate practice questions, and summarize notes — all streamed in real time.</p>
+  </div>
+
+  <!-- API Key -->
+  <div class="api-banner">
+    <label>API Key</label>
+    <input type="text" id="apiKeyInput" placeholder="Paste your Gemini API key here..." />
+    <span class="api-status" id="apiStatus">— not set</span>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('explain', this)">💡 Explain Topic</button>
+    <button class="tab-btn" onclick="switchTab('questions', this)">❓ Question Generator</button>
+    <button class="tab-btn" onclick="switchTab('summarize', this)">📝 Summarize Notes</button>
+  </div>
+
+  <!-- ===== TAB: Explain ===== -->
+  <div id="tab-explain" class="panel">
+    <div class="panel-title"><span class="icon">💡</span> Explain a Topic</div>
+
+    <div class="field">
+      <label>Topic</label>
+      <input type="text" id="explainTopic" placeholder="e.g. Photosynthesis, Bernoulli's principle, Mitosis…" />
+    </div>
+
+    <div class="field">
+      <label>Level</label>
+      <div class="radio-group" id="levelGroup">
+        <label class="selected" onclick="selectRadio('levelGroup', this, 'Beginner')">
+          <input type="radio" name="level" value="Beginner" checked/> Beginner
+        </label>
+        <label onclick="selectRadio('levelGroup', this, 'Intermediate')">
+          <input type="radio" name="level" value="Intermediate"/> Intermediate
+        </label>
+        <label onclick="selectRadio('levelGroup', this, 'Advanced')">
+          <input type="radio" name="level" value="Advanced"/> Advanced
+        </label>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="explainBtn" onclick="runExplain()">✦ Explain</button>
+
+    <div class="output-header">
+      <span class="output-label">AI Explanation</span>
+      <button class="copy-btn" onclick="copyOutput('explainOutput')">copy</button>
+    </div>
+    <div class="output-box" id="explainOutput">
+      <span class="placeholder">Explanation will stream here…</span>
+    </div>
+  </div>
+
+  <!-- ===== TAB: Questions ===== -->
+  <div id="tab-questions" class="panel" style="display:none">
+    <div class="panel-title"><span class="icon">❓</span> Question Generator</div>
+
+    <div class="field">
+      <label>Topic</label>
+      <input type="text" id="qTopic" placeholder="e.g. Newton's Laws, World War II, Quadratic equations…" />
+    </div>
+
+    <div class="field">
+      <label>Question Type</label>
+      <div class="radio-group" id="qtypeGroup">
+        <label class="selected" onclick="selectRadio('qtypeGroup', this, 'Short Answer')">
+          <input type="radio" name="qtype" value="Short Answer" checked/> Short Answer
+        </label>
+        <label onclick="selectRadio('qtypeGroup', this, 'Long Answer')">
+          <input type="radio" name="qtype" value="Long Answer"/> Long Answer
+        </label>
+        <label onclick="selectRadio('qtypeGroup', this, 'MCQ')">
+          <input type="radio" name="qtype" value="MCQ"/> MCQ
+        </label>
+        <label onclick="selectRadio('qtypeGroup', this, 'True/False')">
+          <input type="radio" name="qtype" value="True/False"/> True / False
+        </label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Number of Questions</label>
+      <div class="slider-wrap">
+        <input type="range" id="qCount" min="2" max="10" value="5" oninput="document.getElementById('qCountVal').textContent = this.value" />
+        <span class="slider-val" id="qCountVal">5</span>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="qBtn" onclick="runQuestions()">✦ Generate</button>
+
+    <div class="output-header">
+      <span class="output-label">Practice Questions</span>
+      <button class="copy-btn" onclick="copyOutput('qOutput')">copy</button>
+    </div>
+    <div class="output-box" id="qOutput">
+      <span class="placeholder">Questions will stream here…</span>
+    </div>
+  </div>
+
+  <!-- ===== TAB: Summarize ===== -->
+  <div id="tab-summarize" class="panel" style="display:none">
+    <div class="panel-title"><span class="icon">📝</span> Summarize Notes</div>
+
+    <div class="field">
+      <label>Paste your notes</label>
+      <textarea id="notesInput" rows="8" placeholder="Paste your raw notes, textbook paragraphs, or lecture text here…"></textarea>
+    </div>
+
+    <button class="btn-primary" id="sumBtn" onclick="runSummarize()">✦ Summarize</button>
+
+    <div class="output-header">
+      <span class="output-label">Summary</span>
+      <button class="copy-btn" onclick="copyOutput('sumOutput')">copy</button>
+    </div>
+    <div class="output-box" id="sumOutput">
+      <span class="placeholder">Summary will stream here…</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    Built with Gemini 2.0 Flash · <a href="https://aistudio.google.com/app/apikey" target="_blank">Get your free API key →</a>
+  </div>
+</div>
+
+<script type="module">
+  // ─── State ───────────────────────────────────────────────
+  let selectedLevel  = 'Beginner';
+  let selectedQType  = 'Short Answer';
+  let apiKey = '';
+
+  // ─── Tab switching ────────────────────────────────────────
+  window.switchTab = (name, btn) => {
+    ['explain','questions','summarize'].forEach(t => {
+      document.getElementById('tab-' + t).style.display = 'none';
+    });
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).style.display = '';
+    btn.classList.add('active');
+  };
+
+  // ─── Radio selection ──────────────────────────────────────
+  window.selectRadio = (groupId, el, value) => {
+    document.querySelectorAll(`#${groupId} label`).forEach(l => {
+      l.classList.remove('selected');
+    });
+    el.classList.add('selected');
+    el.querySelector('input').checked = true;
+    if (groupId === 'levelGroup') selectedLevel = value;
+    if (groupId === 'qtypeGroup') selectedQType = value;
+  };
+
+  // ─── API key watcher ──────────────────────────────────────
+  const apiInput = document.getElementById('apiKeyInput');
+  const apiStatus = document.getElementById('apiStatus');
+
+  apiInput.addEventListener('input', () => {
+    apiKey = apiInput.value.trim();
+    if (apiKey.length > 10) {
+      apiStatus.textContent = '✓ key set';
+      apiStatus.className = 'api-status ok';
+    } else {
+      apiStatus.textContent = '— not set';
+      apiStatus.className = 'api-status bad';
+    }
+  });
+
+  // ─── Copy ─────────────────────────────────────────────────
+  window.copyOutput = (id) => {
+    const box = document.getElementById(id);
+    const text = box.innerText.replace('▌','').trim();
+    navigator.clipboard.writeText(text).then(() => {
+      // brief visual feedback
+      box.style.borderColor = 'var(--accent2)';
+      setTimeout(() => box.style.borderColor = '', 1000);
+    });
+  };
+
+  // ─── Core streaming function ──────────────────────────────
+  async function streamGemini({ prompt, outputId, btnId }) {
+    if (!apiKey) {
+      showError(outputId, '⚠️ Please enter your Gemini API key above.');
+      return;
+    }
+
+    const box = document.getElementById(outputId);
+    const btn = document.getElementById(btnId);
+
+    box.innerHTML = '';
+    box.classList.add('streaming');
+    btn.disabled = true;
+    btn.classList.add('loading');
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 4000, temperature: 0.7 }
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let full = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const raw = decoder.decode(value, { stream: true });
+        // SSE: each chunk may have multiple "data:" lines
+        const lines = raw.split('\n');
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const jsonStr = line.slice(5).trim();
+          if (!jsonStr || jsonStr === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const part = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (part) {
+              full += part;
+              box.innerHTML = escapeHtml(full) + '<span class="cursor"></span>';
+              box.scrollTop = box.scrollHeight;
+            }
+          } catch {}
+        }
+      }
+
+      // Done
+      box.innerHTML = escapeHtml(full) || '<span class="placeholder">No response received. Try again.</span>';
+      box.classList.remove('streaming');
+
+    } catch (e) {
+      showError(outputId, formatError(e));
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('loading');
+      box.classList.remove('streaming');
+    }
+  }
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/\n/g,'<br/>');
+  }
+
+  function showError(id, msg) {
+    const box = document.getElementById(id);
+    box.classList.remove('streaming');
+    box.innerHTML = `<span class="error-text">${escapeHtml(msg)}</span>`;
+  }
+
+  function formatError(e) {
+    const err = String(e);
+    if (err.includes('429') || err.toLowerCase().includes('quota') || err.toLowerCase().includes('rate'))
+      return '⚠️ RATE LIMIT\n\nYou\'ve hit the free quota. Wait 1 min and try again,\nor get a fresh key at aistudio.google.com\n\n' + err;
+    if (err.includes('403') || err.toLowerCase().includes('api_key') || err.toLowerCase().includes('invalid'))
+      return '⚠️ INVALID API KEY\n\nCheck your key or get a new one at aistudio.google.com\n\n' + err;
+    if (err.toLowerCase().includes('timeout') || err.toLowerCase().includes('deadline'))
+      return '⚠️ TIMEOUT\n\nRequest took too long. Try a shorter topic.\n\n' + err;
+    if (err.includes('503') || err.toLowerCase().includes('unavailable'))
+      return '⚠️ SERVICE UNAVAILABLE\n\nGemini servers overloaded. Wait a moment.\n\n' + err;
+    return '⚠️ ERROR\n\n' + err;
+  }
+
+  // ─── Tab actions ──────────────────────────────────────────
+  window.runExplain = () => {
+    const topic = document.getElementById('explainTopic').value.trim();
+    if (!topic) { showError('explainOutput','⚠️ Please enter a topic.'); return; }
+    const prompt = `In under 250 words, explain '${topic}' for a ${selectedLevel} student. Use this exact format:\nWHAT IS IT:\n\nHOW IT WORKS:\n\nEXAMPLE:\n\nKEY IDEA:`;
+    streamGemini({ prompt, outputId: 'explainOutput', btnId: 'explainBtn' });
+  };
+
+  window.runQuestions = () => {
+    const topic = document.getElementById('qTopic').value.trim();
+    const count = document.getElementById('qCount').value;
+    if (!topic) { showError('qOutput','⚠️ Please enter a topic.'); return; }
+    const prompt = `Generate exactly ${count} ${selectedQType} questions on '${topic}'. Number them Q1, Q2, etc. Be concise and exam-focused.`;
+    streamGemini({ prompt, outputId: 'qOutput', btnId: 'qBtn' });
+  };
+
+  window.runSummarize = () => {
+    const notes = document.getElementById('notesInput').value.trim();
+    if (!notes) { showError('sumOutput','⚠️ Please paste some notes.'); return; }
+    const prompt = `Summarize the following notes in under 200 words. Use this format:\nKEY POINTS:\n\nIMPORTANT TERMS:\n\nREMEMBER FOR EXAM:\n\nNotes:\n${notes.slice(0, 2000)}`;
+    streamGemini({ prompt, outputId: 'sumOutput', btnId: 'sumBtn' });
+  };
+
+  // Enter key support
+  document.getElementById('explainTopic').addEventListener('keydown', e => { if (e.key==='Enter') window.runExplain(); });
+  document.getElementById('qTopic').addEventListener('keydown', e => { if (e.key==='Enter') window.runQuestions(); });
+</script>
+</body>
+</html>
