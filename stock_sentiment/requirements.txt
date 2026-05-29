@@ -1,7 +1,0 @@
-feedparser
-yfinance
-vaderSentiment
-rich
-plotext
-streamlit
-plotly
